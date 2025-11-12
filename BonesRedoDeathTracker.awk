@@ -12,7 +12,11 @@
 #
 # Usage:
 #   awk -f BonesRedoDeathTracker.awk /path/to/debug.txt
+#   or
+#   awk -f BonesRedoDeathTracker.awk /path/to/debug.txt -v taker=1
 #
+
+#!/usr/bin/awk -f
 
 function clean_loc(str) {
     gsub(/\./, "", str)
@@ -22,21 +26,28 @@ function clean_loc(str) {
 
 # Track bones when placed
 /Bones placed/ {
-    user = $4
+    owner = $4
     loc = clean_loc($7)
-    death[user "|" loc] = 1
+    bones_at[loc] = owner
+    death[owner "|" loc] = 1
 }
 
-# Remove bones record when items are taken
+# Remove bones record and track taker/owner on item pickup
 /takes items/ {
+    taker = $4
     loc = clean_loc($10)
+    owner = bones_at[loc]
+    if (owner && owner != taker) {
+        bones_taken[taker "|" owner]++
+    }
+    delete bones_at[loc]
     for (key in death) {
         split(key, arr, "|")
         if (arr[2] == loc) delete death[key]
     }
 }
 
-# Remove bones record when bones are removed by wrench
+# When bones are removed by wrench
 /uses wrench:wrench/ {
     match($0, /under=([^) ]+)/, m)
     if (m[1]) {
@@ -48,7 +59,7 @@ function clean_loc(str) {
     }
 }
 
-# Update bones location when moved
+# When bones are moved
 /Bones of .* moved from/ {
     match($0, /Bones of ([^ ]+) moved from \(([^)]+)\) to \(([^)]+)\)/, m)
     if (m[1] && m[2] && m[3]) {
@@ -61,8 +72,101 @@ function clean_loc(str) {
 }
 
 END {
+    if (show_taker) {
+        print "Bones taken overview:\nTaker\tOwner\tCount"
+        for (key in bones_taken) {
+            split(key, arr, "|")
+            print arr[1] "\t" arr[2] "\t" bones_taken[key]
+        }
+        # Do nothing else
+        exit
+    }
+    # Default: display remaining bones locations and taken overview
     for (key in death) {
         split(key, arr, "|")
         print arr[1] "\t\t" arr[2]
     }
+    print "\nBones taken overview:\nTaker\tOwner\tCount"
+    for (key in bones_taken) {
+        split(key, arr, "|")
+        print arr[1] "\t" arr[2] "\t" bones_taken[key]
+    }
 }
+
+#!/usr/bin/awk -f
+
+function clean_loc(str) {
+    gsub(/\./, "", str)
+    gsub(/^\(|\)$/, "", str)
+    return str
+}
+
+# Track bones when placed
+/Bones placed/ {
+    owner = $4
+    loc = clean_loc($7)
+    bones_at[loc] = owner
+    death[owner "|" loc] = 1
+}
+
+# Remove bones record and track taker/owner on item pickup
+/takes items/ {
+    taker = $4
+    loc = clean_loc($10)
+    owner = bones_at[loc]
+    if (owner && owner != taker) {
+        bones_taken[taker "|" owner]++
+    }
+    delete bones_at[loc]
+    for (key in death) {
+        split(key, arr, "|")
+        if (arr[2] == loc) delete death[key]
+    }
+}
+
+# When bones are removed by wrench
+/uses wrench:wrench/ {
+    match($0, /under=([^) ]+)/, m)
+    if (m[1]) {
+        loc = clean_loc(m[1])
+        for (key in death) {
+            split(key, arr, "|")
+            if (arr[2] == loc) delete death[key]
+        }
+    }
+}
+
+# When bones are moved
+/Bones of .* moved from/ {
+    match($0, /Bones of ([^ ]+) moved from \(([^)]+)\) to \(([^)]+)\)/, m)
+    if (m[1] && m[2] && m[3]) {
+        user = m[1]
+        oldloc = clean_loc(m[2])
+        newloc = clean_loc(m[3])
+        delete death[user "|" oldloc]
+        death[user "|" newloc] = 1
+    }
+}
+
+END {
+    if (show_taker) {
+        print "Bones taken overview:\nTaker\tOwner\tCount"
+        for (key in bones_taken) {
+            split(key, arr, "|")
+            print arr[1] "\t" arr[2] "\t" bones_taken[key]
+        }
+        # Do nothing else
+        exit
+    }
+    # Default: display remaining bones locations and taken overview
+    for (key in death) {
+        split(key, arr, "|")
+        print arr[1] "\t\t" arr[2]
+    }
+    print "\nBones taken overview:\nTaker\tOwner\tCount"
+    for (key in bones_taken) {
+        split(key, arr, "|")
+        print arr[1] "\t" arr[2] "\t" bones_taken[key]
+    }
+}
+
